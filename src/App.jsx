@@ -1147,6 +1147,16 @@ export default function App() {
     editar: 'Editar Fornecedor',
   }[view] || ''
 
+  const alertCount = useMemo(() => {
+    let n = 0
+    data.documentos.forEach(d => { const s = calcStatusDoc(d); if (s === 'VENCIDO' || s === 'VENCENDO') n++ })
+    data.fornecedores.forEach(f => {
+      if (!f.dataProximaRequalificacao) return
+      if (diffDias(f.dataProximaRequalificacao) <= 60) n++
+    })
+    return n
+  }, [data])
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', flexDirection: 'column', gap: 12 }}>
       <div style={{ width: 32, height: 32, border: '3px solid var(--border)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
@@ -1163,16 +1173,6 @@ export default function App() {
       </button>
     </div>
   )
-
-  const alertCount = useMemo(() => {
-    let n = 0
-    data.documentos.forEach(d => { const s = calcStatusDoc(d); if (s === 'VENCIDO' || s === 'VENCENDO') n++ })
-    data.fornecedores.forEach(f => {
-      if (!f.dataProximaRequalificacao) return
-      if (diffDias(f.dataProximaRequalificacao) <= 60) n++
-    })
-    return n
-  }, [data])
 
   return (
     <div style={S.app}>
