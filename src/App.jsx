@@ -2,8 +2,6 @@ import { useState, useEffect, useMemo } from 'react'
 
 // ─── CONSTANTES ──────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'msb-gedsup-v1'
-
 const TIPOS_SERVICO = [
   { id: 'residuos', label: 'Gerenciamento de Resíduos', classificacao: 'NAO_CRITICO' },
   { id: 'consultorias', label: 'Consultorias', classificacao: 'NAO_CRITICO' },
@@ -189,9 +187,6 @@ const getCriteriosPorTipo = (tipo) => {
 const getDocsPorClassificacao = (classificacao) =>
   classificacao === 'CRITICO' ? DOCS_CRITICO : DOCS_NAO_CRITICO
 
-// ─── SEED ─────────────────────────────────────────────────────────────────────
-
-const SEED = { fornecedores: [], documentos: [], avaliacoes: [] }
 
 // ─── ESTILOS INLINE ───────────────────────────────────────────────────────────
 
@@ -1061,39 +1056,53 @@ export default function App() {
   const [view, setView] = useState('dashboard')
   const [selectedId, setSelectedId] = useState(null)
   const [editando, setEditando] = useState(null)
-  const [data, setData] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : SEED
-    } catch { return SEED }
-  })
+  const [data, setData] = useState({ fornecedores: [], documentos: [], avaliacoes: [] })
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  }, [data])
+    Promise.all([
+      fetch('/api/fornecedores').then(r => r.json()),
+      fetch('/api/documentos').then(r => r.json()),
+      fetch('/api/avaliacoes').then(r => r.json()),
+    ]).then(([fornecedores, documentos, avaliacoes]) => {
+      setData({ fornecedores, documentos, avaliacoes })
+      setLoading(false)
+    }).catch(() => {
+      setLoadError('Erro ao conectar com o servidor.')
+      setLoading(false)
+    })
+  }, [])
 
   const navTo = (v, id) => {
     setView(v)
     if (id) setSelectedId(id)
   }
 
+  const call = (url, method = 'GET', body) =>
+    fetch(url, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    }).then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
+
   // CRUD Fornecedor
-  const salvarFornecedor = (forn) => {
-    setData(d => {
-      const existing = d.fornecedores.find(f => f.id === forn.id)
-      return {
-        ...d,
-        fornecedores: existing
-          ? d.fornecedores.map(f => f.id === forn.id ? forn : f)
-          : [...d.fornecedores, forn]
-      }
-    })
+  const salvarFornecedor = async (forn) => {
+    const isNew = !data.fornecedores.find(f => f.id === forn.id)
+    await call(isNew ? '/api/fornecedores' : `/api/fornecedores?id=${forn.id}`, isNew ? 'POST' : 'PUT', forn)
+    setData(d => ({
+      ...d,
+      fornecedores: isNew
+        ? [...d.fornecedores, forn]
+        : d.fornecedores.map(f => f.id === forn.id ? forn : f)
+    }))
     setEditando(null)
     navTo('detalhe', forn.id)
   }
 
-  const excluirFornecedor = (id) => {
+  const excluirFornecedor = async (id) => {
     if (!window.confirm('Excluir este fornecedor e todos os seus dados? Esta ação não pode ser desfeita.')) return
+    await call(`/api/fornecedores?id=${id}`, 'DELETE')
     setData(d => ({
       ...d,
       fornecedores: d.fornecedores.filter(f => f.id !== id),
@@ -1104,7 +1113,8 @@ export default function App() {
   }
 
   // CRUD Documentos
-  const salvarDoc = (doc) => {
+  const salvarDoc = async (doc) => {
+    await call('/api/documentos', 'POST', doc)
     setData(d => {
       const existing = d.documentos.find(x => x.id === doc.id)
       return {
@@ -1116,12 +1126,14 @@ export default function App() {
     })
   }
 
-  const excluirDoc = (docId) => {
+  const excluirDoc = async (docId) => {
+    await call(`/api/documentos?id=${docId}`, 'DELETE')
     setData(d => ({ ...d, documentos: d.documentos.filter(x => x.id !== docId) }))
   }
 
   // CRUD Avaliações
-  const salvarAvaliacao = (av) => {
+  const salvarAvaliacao = async (av) => {
+    await call('/api/avaliacoes', 'POST', av)
     setData(d => ({ ...d, avaliacoes: [...d.avaliacoes, av] }))
   }
 
@@ -1134,6 +1146,23 @@ export default function App() {
     detalhe: selectedForn?.razaoSocial || 'Detalhe',
     editar: 'Editar Fornecedor',
   }[view] || ''
+
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', flexDirection: 'column', gap: 12 }}>
+      <div style={{ width: 32, height: 32, border: '3px solid var(--border)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <div style={{ fontSize: 13, color: 'var(--text2)' }}>Carregando GEDSUP...</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+    </div>
+  )
+
+  if (loadError) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 15, color: '#ef4444' }}>{loadError}</div>
+      <button onClick={() => window.location.reload()} style={{ background: 'var(--accent)', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: 6, cursor: 'pointer' }}>
+        Tentar novamente
+      </button>
+    </div>
+  )
 
   const alertCount = useMemo(() => {
     let n = 0
